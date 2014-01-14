@@ -1,44 +1,43 @@
 #!/bin/sh
-
-# Based on provision.sh on popit. But we going to remove a few thing. 
-# Update package index before we start
-apt-get update -y
-
-# Add extra repos
-echo "##############################"
-echo "Adding neccessary repos for Node.js and MongoDB"
-echo "##############################"
-# Instructions from: https://github.com/joyent/node/wiki/Installing-Node.js-via-package-manager
-apt-get install -y python-software-properties
-add-apt-repository -y ppa:chris-lea/node.js
-# Instructions from: http://docs.mongodb.org/manual/tutorial/install-mongodb-on-ubuntu/
-apt-key adv --keyserver keyserver.ubuntu.com --recv 7F0CEB10
-echo "deb http://downloads-distro.mongodb.org/repo/ubuntu-upstart dist 10gen" > /etc/apt/sources.list.d/10gen.list
-apt-get update -y
-	
-# Install packages
-echo "##############################"
-echo "Installing Packages"
-echo "##############################"
-apt-get install -yqq nodejs mongodb-10gen build-essential ruby1.9.1 ruby1.9.1-dev git daemontools daemontools-run
-gem install compass pry
-
-adduser popit
-
+# Create user please
+# Create sudo please 
+echo "setup dependency"
+sudo apt-key adv --keyserver keyserver.ubuntu.com --recv 7F0CEB10
+echo 'deb http://downloads-distro.mongodb.org/repo/debian-sysvinit dist 10gen' | sudo tee /etc/apt/sources.list.d/mongodb.list
+sudo apt-get -y install python g++ make checkinstall ruby rubygems \
+    postfix daemontools daemontools-run mongodb
+sudo gem install compass pry
 mkdir /opt/sinar/
+mkdir /opt/sinar/packages/
+echo "setup node.js"
+chown -R sweemeng:sweemeng /opt/sinar/packages/
+wget -N http://nodejs.org/dist/node-latest.tar.gz
+cd node-v*
+./configure
+make
+sudo make install 
+echo "Setup email"
+# The email setup is not proper it will ends up in spam
+cp postfix/main.cf /etc/postfix/main.cf
+/etc/init.d/postfix reload
+cp postfix/virtual /etc/postfix/virtual 
+postmap /etc/postfix/virtual
+/etc/init.d/postfix reload
+echo "create popit user"
+adduser popit
+echo "now fetch from github"
 cd /opt/sinar/
-# Give only read access
-
-git clone https://github.com/Sinar/popit 
+git clone https://github.com/sinar/popit
 chown -R popit:popit popit
-sudo -u popit make
+cd popit 
+exec setuidgid popit make
+cp production.js /opt/sinar/popit/config/production.js
+echo "now create a popit service"
+# We might need to run svscan in /etc/services/popit
 mkdir /etc/service/popit/
-# run popit as a different user 
-echo "#!/bin/sh" > /etc/service/popit/run
-echo "cd /opt/sinar/popit/" >> /etc/service/popit/run
-echo "exec setuidgid popit  node ./server.js" >> /etc/service/popit/run
-chmod 1775 /etc/service/popit
-chmod +x /etc/service/popit/run
-svc -u /etc/service/popit/
-
-
+chmod 1755 /etc/service/popit 
+cp daemontools/run /etc/service/popit/
+sudo chmod +x /etc/service/popit/run
+cp nginx/popit /etc/nginx/sites-available/popit
+ln -s /etc/nginx/sites-available/popit /etc/nginx/sites-enabled/popit
+service nginx restart
